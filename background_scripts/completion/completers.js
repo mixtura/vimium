@@ -45,6 +45,8 @@ export class Suggestion {
   deDuplicate = true;
   // The tab represented by this suggestion. Populated by TabCompleter.
   tabId;
+  tabGroupTitle;
+  tabGroupColor;
   // Whether this is a suggestion provided by a user's custom search engine.
   isCustomSearch;
   // Whether this is meant to be the first suggestion from the user's custom search engine which
@@ -86,6 +88,7 @@ export class Suggestion {
       faviconUrl.searchParams.set("size", "16");
       faviconHtml = `<img class="icon" src="${faviconUrl.toString()}" />`;
     }
+    const tabGroupBadgeHtml = this.generateTabGroupBadgeHtml();
     if (this.isCustomSearch) {
       this.html = `\
 <div class="top-half">
@@ -98,7 +101,7 @@ export class Suggestion {
       this.html = `\
 <div class="top-half">
    <span class="source ${insertTextClass}">${insertTextIndicator}</span><span class="source">${this.description}</span>
-   <span class="title">${this.highlightQueryTerms(Utils.escapeHtml(this.title))}</span>
+   <span class="title">${this.highlightQueryTerms(Utils.escapeHtml(this.title))}</span>${tabGroupBadgeHtml}
  </div>
  <div class="bottom-half">
   <span class="source no-insert-text">${insertTextIndicator}</span>${faviconHtml}<span class="url">${
@@ -109,6 +112,13 @@ export class Suggestion {
 `;
     }
     return this.html;
+  }
+
+  generateTabGroupBadgeHtml() {
+    if (this.description !== "tab" || !this.tabGroupColor) return "";
+    const fallbackLabel = this.tabGroupColor[0].toUpperCase() + this.tabGroupColor.slice(1);
+    const label = Utils.escapeHtml(this.tabGroupTitle || fallbackLabel);
+    return `<span class="tab-group-badge tab-group-${this.tabGroupColor}">${label}</span>`;
   }
 
   // Use neat trick to snatch a domain (http://stackoverflow.com/a/8498668).
@@ -497,14 +507,18 @@ export class TabCompleter {
     // We search all tabs, not just those in the current window.
     const tabs = await chrome.tabs.query({});
     const results = tabs.filter((tab) => ranking.matches(queryTerms, tab.url, tab.title));
+    const groupInfoById = await this.getGroupInfoById(results);
     const suggestions = results
       .map((tab) => {
+        const groupInfo = groupInfoById[tab.groupId];
         const suggestion = new Suggestion({
           queryTerms,
           description: "tab",
           url: tab.url,
           title: tab.title,
           tabId: tab.id,
+          tabGroupTitle: groupInfo?.title,
+          tabGroupColor: groupInfo?.color,
           deDuplicate: false,
         });
         suggestion.relevancy = this.computeRelevancy(suggestion);
@@ -521,6 +535,19 @@ export class TabCompleter {
       suggestion.relevancy /= (i / 4) + 1;
     });
     return suggestions;
+  }
+
+  async getGroupInfoById(tabs) {
+    if (!chrome.tabGroups?.query) return {};
+
+    const noGroupId = chrome.tabGroups.TAB_GROUP_ID_NONE ?? -1;
+    const groupIds = new Set(
+      tabs.map((tab) => tab.groupId).filter((groupId) => groupId != null && groupId !== noGroupId),
+    );
+    if (groupIds.size === 0) return {};
+
+    const groups = await chrome.tabGroups.query({});
+    return Object.fromEntries(groups.filter((group) => groupIds.has(group.id)).map((group) => [group.id, group]));
   }
 
   computeRelevancy(suggestion) {

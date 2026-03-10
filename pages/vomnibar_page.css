@@ -66,8 +66,17 @@ ul {
 }
 
 #vomnibar li .top-half, #vomnibar li .bottom-half {
-  display: block;
   overflow: hidden;
+}
+
+#vomnibar li .top-half {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#vomnibar li .bottom-half {
+  display: block;
 }
 
 #vomnibar li .bottom-half {
@@ -84,6 +93,62 @@ ul {
 #vomnibar li .source {
   color: #777;
   margin-right: 4px;
+}
+
+#vomnibar li .tab-group-badge {
+  display: inline-block;
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+#vomnibar li .tab-group-blue {
+  background-color: #4f8df7;
+  color: white;
+}
+
+#vomnibar li .tab-group-cyan {
+  background-color: #30b7c9;
+  color: white;
+}
+
+#vomnibar li .tab-group-green {
+  background-color: #4aa84a;
+  color: white;
+}
+
+#vomnibar li .tab-group-grey {
+  background-color: #7b8591;
+  color: white;
+}
+
+#vomnibar li .tab-group-orange {
+  background-color: #f2994a;
+  color: black;
+}
+
+#vomnibar li .tab-group-pink {
+  background-color: #e67ac2;
+  color: black;
+}
+
+#vomnibar li .tab-group-purple {
+  background-color: #8a63d2;
+  color: white;
+}
+
+#vomnibar li .tab-group-red {
+  background-color: #d9534f;
+  color: white;
+}
+
+#vomnibar li .tab-group-yellow {
+  background-color: #f2c94c;
+  color: black;
 }
 #vomnibar li .relevancy {
   position: absolute;
@@ -110,6 +175,15 @@ ul {
   color: black;
   margin-left: 4px;
 }
+
+#vomnibar li .title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 #vomnibar li em {
   font-style: italic;
 }

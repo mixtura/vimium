@@ -374,6 +374,20 @@ context("tab completer", () => {
     assert.equal(["tab2.com"], results.map((tab) => tab.url));
     assert.equal([2], results.map((tab) => tab.tabId));
   });
+
+  should("attach tab group information to grouped tabs", async () => {
+    stub(chrome.tabs, "query", () => [
+      { url: "tab1.com", title: "tab1", id: 1, groupId: 12 },
+    ]);
+    stub(chrome.tabGroups, "query", () => [
+      { id: 12, color: "blue", title: "Work" },
+    ]);
+
+    const results = await filterCompleter(completer, ["tab1"]);
+
+    assert.equal("Work", results[0].tabGroupTitle);
+    assert.equal("blue", results[0].tabGroupColor);
+  });
 });
 
 context("tab vomnibar result limits", () => {
@@ -463,6 +477,24 @@ context("suggestions", () => {
     });
     const expected = "<span class='match'>ninjaword</span>s";
     assert.isTrue(suggestion.generateHtml({}).indexOf(expected) >= 0);
+  });
+
+  should("render a colored tab group badge", () => {
+    const suggestion = new Suggestion({
+      queryTerms: [],
+      description: "tab",
+      url: "url",
+      title: "title",
+      tabGroupTitle: "Work",
+      tabGroupColor: "blue",
+      relevancyFunction: returns(1),
+    });
+
+    const html = suggestion.generateHtml({});
+    assert.isTrue(html.indexOf("tab-group-badge") >= 0);
+    assert.isTrue(html.indexOf("tab-group-blue") >= 0);
+    assert.isTrue(html.indexOf(">Work<") >= 0);
+    assert.isTrue(html.indexOf("title</span><span class=\"tab-group-badge") >= 0);
   });
 
   should("shorten urls", () => {

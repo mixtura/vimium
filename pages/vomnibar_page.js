@@ -174,7 +174,9 @@ class VomnibarUI {
       return "ctrl-enter";
     } else if (event.key === "Enter") {
       return "enter";
-    } else if ((event.key === "Delete") && event.shiftKey && !event.ctrlKey && !event.altKey) {
+    } else if (
+      event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && (key === "d")
+    ) {
       return "remove";
     } else if (KeyboardUtils.isBackspace(event)) {
       return "delete";
@@ -242,7 +244,8 @@ class VomnibarUI {
       }
     } else if ((action === "remove") && (this.selection >= 0)) {
       const completion = this.completions[this.selection];
-      console.log(completion);
+      if (completion?.tabId == null) return;
+      await this.removeTabCompletion(completion);
     }
 
     event.stopImmediatePropagation();
@@ -313,7 +316,7 @@ class VomnibarUI {
     return prefix + this.input.value;
   }
 
-  async updateCompletions() {
+  async updateCompletions(preferredSelection = null) {
     const requestId = Utils.createUniqueId();
     this.lastRequestId = requestId;
     const query = this.getInputValueAsQuery();
@@ -331,7 +334,9 @@ class VomnibarUI {
     if (this.lastRequestId != requestId) return;
 
     this.completions = results;
-    this.selection = this.completions[0]?.autoSelect ? 0 : this.initialSelectionValue;
+    this.selection = preferredSelection != null
+      ? preferredSelection
+      : (this.completions[0]?.autoSelect ? 0 : this.initialSelectionValue);
     this.renderCompletions(this.completions);
     this.selection = Math.min(
       this.completions.length - 1,
@@ -407,6 +412,13 @@ class VomnibarUI {
     } else {
       this.launchUrl(completion.url, openInNewTab);
     }
+  }
+
+  async removeTabCompletion(completion) {
+    const preferredSelection = this.selection;
+    await chrome.runtime.sendMessage({ handler: "removeSpecificTab", id: completion.tabId });
+    await this.updateCompletions(preferredSelection);
+    this.input.focus();
   }
 
   async launchUrl(url, openInNewTab) {

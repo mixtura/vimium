@@ -56,6 +56,62 @@ context("vomnibar page", () => {
     assert.equal("http://hello.com", ui.input.value);
   });
 
+  should("close a selected tab when ctrl-d is pressed and refill the list", async () => {
+    let removedTabId = null;
+    let wasRemoved = false;
+    stub(chrome.runtime, "sendMessage", async (message) => {
+      if (message.handler == "filterCompletions") {
+        if (!wasRemoved) {
+          return [
+            {
+              description: "tab",
+              html: "<span>tab 1</span>",
+              tabId: 42,
+              title: "tab 1",
+              url: "https://example.com/1",
+            },
+            {
+              description: "tab",
+              html: "<span>tab 2</span>",
+              tabId: 43,
+              title: "tab 2",
+              url: "https://example.com/2",
+            },
+          ];
+        }
+        return [
+          {
+            description: "tab",
+            html: "<span>tab 2</span>",
+            tabId: 43,
+            title: "tab 2",
+            url: "https://example.com/2",
+          },
+          {
+            description: "tab",
+            html: "<span>tab 3</span>",
+            tabId: 44,
+            title: "tab 3",
+            url: "https://example.com/3",
+          },
+        ];
+      } else if (message.handler == "removeSpecificTab") {
+        removedTabId = message.id;
+        wasRemoved = true;
+      }
+    });
+
+    vomnibarPage.reset();
+    await vomnibarPage.activate({ completer: "tabs", selectFirst: true });
+    ui = vomnibarPage.ui;
+
+    await ui.onKeyEvent(newKeyEvent({ key: "d", ctrlKey: true }));
+
+    assert.equal(42, removedTabId);
+    assert.equal([43, 44], ui.completions.map((c) => c.tabId));
+    assert.equal(0, ui.selection);
+  });
+
   should("open a URL-like query when enter is pressed", async () => {
     ui.setQuery("www.example.com");
     let handler = null;

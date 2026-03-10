@@ -152,6 +152,7 @@ globalThis.chrome = {
     query() {
       return true;
     },
+    remove(_id) {},
     sendMessage(_id, _properties) {},
     update(_id, _properties) {},
   },

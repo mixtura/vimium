@@ -112,6 +112,22 @@ context("vomnibar page", () => {
     assert.equal(0, ui.selection);
   });
 
+  should("request all matching tabs for tab selection", async () => {
+    let filterRequest = null;
+    stub(chrome.runtime, "sendMessage", async (message) => {
+      if (message.handler == "filterCompletions") {
+        filterRequest = message;
+        return [];
+      }
+    });
+
+    vomnibarPage.reset();
+    await vomnibarPage.activate({ completer: "tabs", maxResults: Number.MAX_SAFE_INTEGER });
+
+    assert.equal("tabs", filterRequest.completerName);
+    assert.equal(Number.MAX_SAFE_INTEGER, filterRequest.maxResults);
+  });
+
   should("open a URL-like query when enter is pressed", async () => {
     ui.setQuery("www.example.com");
     let handler = null;

@@ -21,8 +21,9 @@ import "../../../lib/url_utils.js";
 const hours = (n) => 1000 * 60 * 60 * n;
 
 // A convenience wrapper around completer.filter() so it can be called synchronously in tests.
-const filterCompleter = async (completer, queryTerms) => {
+const filterCompleter = async (completer, queryTerms, request = {}) => {
   return await completer.filter({
+    ...request,
     queryTerms,
     query: queryTerms.join(" "),
   });
@@ -372,6 +373,30 @@ context("tab completer", () => {
     const results = await filterCompleter(completer, ["tab2"]);
     assert.equal(["tab2.com"], results.map((tab) => tab.url));
     assert.equal([2], results.map((tab) => tab.tabId));
+  });
+});
+
+context("tab vomnibar result limits", () => {
+  let completer;
+
+  setup(() => {
+    const tabs = Array.from({ length: 12 }, (_, i) => ({
+      url: `tab${i + 1}.com`,
+      title: `tab${i + 1}`,
+      id: i + 1,
+    }));
+    stub(chrome.tabs, "query", () => tabs);
+    completer = new MultiCompleter([new TabCompleter()]);
+  });
+
+  should("default to 10 results", async () => {
+    const results = await filterCompleter(completer, ["tab"]);
+    assert.equal(10, results.length);
+  });
+
+  should("honor an overridden maxResults for tab selection", async () => {
+    const results = await filterCompleter(completer, ["tab"], { maxResults: 12 });
+    assert.equal(12, results.length);
   });
 });
 

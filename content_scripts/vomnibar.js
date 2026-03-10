@@ -20,6 +20,7 @@ const Vomnibar = {
   activateTabSelection(sourceFrameId) {
     this.open(sourceFrameId, {
       completer: "tabs",
+      maxResults: Number.MAX_SAFE_INTEGER,
       selectFirst: true,
     });
   },
@@ -69,6 +70,7 @@ const Vomnibar = {
   // - vomnibarShowOptions:
   //     completer: The name of the completer to fetch results from.
   //     query: Optional. Text to prefill the Vomnibar with.
+  //     maxResults: Optional. The maximum number of completions to show.
   //     selectFirst: Optional. Whether to select the first entry.
   //     newTab: Optional. Whether to open the result in a new tab.
   //     keyword: A keyword which will scope the search to a UserSearchEngine.

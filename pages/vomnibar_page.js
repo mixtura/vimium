@@ -40,6 +40,7 @@ export async function activate(options) {
     ui = new VomnibarUI();
   }
   ui.setCompleterName(options.completer);
+  ui.setMaxResults(options.maxResults);
   ui.refreshCompletions();
   ui.setInitialSelectionValue(options.selectFirst ? 0 : -1);
   ui.setForceNewTab(options.newTab);
@@ -80,6 +81,9 @@ class VomnibarUI {
   setCompleterName(name) {
     this.completerName = name;
     this.reset();
+  }
+  setMaxResults(maxResults) {
+    this.maxResults = maxResults;
   }
 
   // True if the user has entered the keyword of one of their custom search engines.
@@ -144,6 +148,7 @@ class VomnibarUI {
     for (const [i, el] of Object.entries(this.completionList.children)) {
       el.className = i == this.selection ? "selected" : "";
     }
+    this.completionList.children[this.selection]?.scrollIntoView?.({ block: "nearest" });
   }
 
   // Returns the user's action ("up", "down", "tab", etc, or null) based on their keypress. We
@@ -322,13 +327,18 @@ class VomnibarUI {
     const query = this.getInputValueAsQuery();
     const queryTerms = query.trim().split(/\s+/).filter((s) => s.length > 0);
 
-    const results = await chrome.runtime.sendMessage({
+    const request = {
       handler: "filterCompletions",
       completerName: this.completerName,
       queryTerms,
       query,
       seenTabToOpenCompletionList: this.seenTabToOpenCompletionList,
-    });
+    };
+    if (this.maxResults != null) {
+      request.maxResults = this.maxResults;
+    }
+
+    const results = await chrome.runtime.sendMessage(request);
 
     // Ensure that no new filter requests have gone out while waiting for this result.
     if (this.lastRequestId != requestId) return;

@@ -63,6 +63,7 @@ class VomnibarUI {
     this.activeUserSearchEngine = null;
     // Used for synchronizing requests and responses to the background page.
     this.lastRequestId = null;
+    this.tabGroupSelection = null;
   }
 
   setQuery(query) {
@@ -89,6 +90,10 @@ class VomnibarUI {
   // True if the user has entered the keyword of one of their custom search engines.
   isUserSearchEngineActive() {
     return this.activeUserSearchEngine != null;
+  }
+
+  isTabGroupSelectionActive() {
+    return this.tabGroupSelection != null;
   }
 
   // The sequence of events when the vomnibar is hidden:
@@ -122,6 +127,7 @@ class VomnibarUI {
     this.renderCompletions(this.completions);
     this.previousInputValue = null;
     this.activeUserSearchEngine = null;
+    this.tabGroupSelection = null;
     this.selection = this.initialSelectionValue;
     this.seenTabToOpenCompletionList = false;
     this.lastRequestId = null;
@@ -183,6 +189,10 @@ class VomnibarUI {
       event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && (key === "d")
     ) {
       return "remove";
+    } else if (
+      event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && (key === "a")
+    ) {
+      return "group";
     } else if (KeyboardUtils.isBackspace(event)) {
       return "delete";
     }
@@ -244,6 +254,8 @@ class VomnibarUI {
       } else if (this.seenTabToOpenCompletionList && (this.input.value.trim().length === 0)) {
         this.seenTabToOpenCompletionList = false;
         this.update();
+      } else if (this.isTabGroupSelectionActive() && (this.input.value.trim().length === 0)) {
+        await this.finishTabGroupSelection();
       } else {
         return; // Do not suppress event.
       }
@@ -251,6 +263,11 @@ class VomnibarUI {
       const completion = this.completions[this.selection];
       if (completion?.tabId == null) return;
       await this.removeTabCompletion(completion);
+    } else if (action === "group") {
+      if ((this.completerName !== "tabs") || (this.selection < 0)) return;
+      const completion = this.completions[this.selection];
+      if (completion?.tabId == null) return;
+      await this.startTabGroupSelection(completion);
     }
 
     event.stopImmediatePropagation();
@@ -258,6 +275,26 @@ class VomnibarUI {
   }
 
   async handleEnterKey(event) {
+    if (this.isTabGroupSelectionActive()) {
+      const completion = this.completions[this.selection];
+      if (completion?.createTabGroupTitle != null) {
+        await chrome.runtime.sendMessage({
+          handler: "createTabGroupForTab",
+          tabId: this.tabGroupSelection.tabId,
+          title: completion.createTabGroupTitle,
+        });
+      } else {
+        if (completion?.tabGroupId == null) return;
+        await chrome.runtime.sendMessage({
+          handler: "assignTabToGroup",
+          tabId: this.tabGroupSelection.tabId,
+          groupId: completion.tabGroupId,
+        });
+      }
+      await this.finishTabGroupSelection();
+      return;
+    }
+
     const isPrimarySearchSuggestion = (c) => c?.isPrimarySuggestion && c?.isCustomSearch;
     let query = this.input.value.trim();
 
@@ -319,6 +356,38 @@ class VomnibarUI {
   getInputValueAsQuery() {
     const prefix = this.isUserSearchEngineActive() ? this.activeUserSearchEngine.keyword + " " : "";
     return prefix + this.input.value;
+  }
+
+  async startTabGroupSelection(completion) {
+    this.tabGroupSelection = {
+      completerName: this.completerName,
+      maxResults: this.maxResults,
+      query: this.input.value,
+      selection: this.selection,
+      tabId: completion.tabId,
+    };
+    this.completerName = "tabGroups";
+    this.maxResults = Number.MAX_SAFE_INTEGER;
+    this.previousInputValue = null;
+    this.input.value = "";
+    await this.updateCompletions(0);
+  }
+
+  async finishTabGroupSelection() {
+    const { completerName, maxResults, query, selection, tabId } = this.tabGroupSelection;
+    this.tabGroupSelection = null;
+    this.completerName = completerName;
+    this.maxResults = maxResults;
+    this.previousInputValue = null;
+    this.input.value = query;
+    await this.updateCompletions();
+    const selectedIndex = this.completions.findIndex((completion) => completion.tabId === tabId);
+    this.selection = selectedIndex >= 0 ? selectedIndex : selection;
+    this.selection = Math.min(
+      this.completions.length - 1,
+      Math.max(this.initialSelectionValue, this.selection),
+    );
+    this.updateSelection();
   }
 
   async updateCompletions(preferredSelection = null) {

@@ -19,6 +19,7 @@ import {
   MultiCompleter,
   SearchEngineCompleter,
   TabCompleter,
+  TabGroupCompleter,
 } from "./completion/completers.js";
 
 // NOTE(philc): This file has many superfluous return statements in its functions, as a result of
@@ -46,6 +47,7 @@ const completionSources = {
   history: new HistoryCompleter(),
   domains: new DomainCompleter(),
   tabs: new TabCompleter(),
+  tabGroups: new TabGroupCompleter(),
   searchEngines: new SearchEngineCompleter(),
 };
 
@@ -59,6 +61,7 @@ const completers = {
   ]),
   bookmarks: new MultiCompleter([completionSources.bookmarks]),
   tabs: new MultiCompleter([completionSources.tabs]),
+  tabGroups: completionSources.tabGroups,
 };
 
 // A query dictionary for `chrome.tabs.query` that will return only the visible tabs.
@@ -181,6 +184,37 @@ async function selectSpecificTab(request) {
 
 async function removeSpecificTab(request) {
   await chrome.tabs.remove(request.id);
+}
+
+async function assignTabToGroup(request) {
+  const tabId = Number(request.tabId);
+  const groupId = Number(request.groupId);
+  if (!Number.isInteger(tabId) || !Number.isInteger(groupId)) {
+    throw new Error("assignTabToGroup requires numeric tabId and groupId.");
+  }
+
+  const tab = await chrome.tabs.get(tabId);
+  const group = await chrome.tabGroups.get(groupId);
+
+  if (tab.windowId !== group.windowId) {
+    await chrome.tabs.move(tab.id, { windowId: group.windowId, index: -1 });
+  }
+
+  await chrome.tabs.group({ groupId: group.id, tabIds: [tab.id] });
+}
+
+async function createTabGroupForTab(request) {
+  const tabId = Number(request.tabId);
+  if (!Number.isInteger(tabId)) {
+    throw new Error("createTabGroupForTab requires a numeric tabId.");
+  }
+
+  const tab = await chrome.tabs.get(tabId);
+  const groupId = await chrome.tabs.group({
+    tabIds: [tab.id],
+    createProperties: { windowId: tab.windowId },
+  });
+  await chrome.tabGroups.update(groupId, { title: request.title });
 }
 
 function moveTab({ count, tab, registryEntry }) {
@@ -647,6 +681,8 @@ const sendRequestHandlers = {
   nextFrame: BackgroundCommands.nextFrame,
   selectSpecificTab,
   removeSpecificTab,
+  assignTabToGroup,
+  createTabGroupForTab,
   createMark: marks.create,
   gotoMark: marks.goto,
   // Send a message to all frames in the current tab. If request.frameId is provided, then send

@@ -47,6 +47,8 @@ export class Suggestion {
   tabId;
   tabGroupTitle;
   tabGroupColor;
+  tabGroupId;
+  createTabGroupTitle;
   // Whether this is a suggestion provided by a user's custom search engine.
   isCustomSearch;
   // Whether this is meant to be the first suggestion from the user's custom search engine which
@@ -115,7 +117,7 @@ export class Suggestion {
   }
 
   generateTabGroupBadgeHtml() {
-    if (this.description !== "tab" || !this.tabGroupColor) return "";
+    if (!["tab", "tab group"].includes(this.description) || !this.tabGroupColor) return "";
     const fallbackLabel = this.tabGroupColor[0].toUpperCase() + this.tabGroupColor.slice(1);
     const label = Utils.escapeHtml(this.tabGroupTitle || fallbackLabel);
     return `<span class="tab-group-badge tab-group-${this.tabGroupColor}">${label}</span>`;
@@ -510,7 +512,7 @@ export class TabCompleter {
     const groupInfoById = await this.getGroupInfoById(tabs);
     const results = tabs.filter((tab) => {
       if (!ranking.matches(queryTerms, tab.url, tab.title)) return false;
-      return this.tabMatchesGroupFilter(tab, groupFilterTerms);
+      return this.tabMatchesGroupFilter(tab, groupFilterTerms, groupInfoById[tab.groupId]);
     });
     const suggestions = results
       .map((tab) => {
@@ -547,7 +549,7 @@ export class TabCompleter {
 
     const [firstToken, ...restTokens] = trimmedQuery.split(/\s+/);
     const separatorIndex = firstToken.indexOf(":");
-    if (separatorIndex <= 0) return { queryTerms, groupFilterTerms: null };
+    if (separatorIndex < 0) return { queryTerms, groupFilterTerms: null };
 
     const groupFilter = firstToken.slice(0, separatorIndex);
     const firstQueryTerm = firstToken.slice(separatorIndex + 1);
@@ -557,7 +559,7 @@ export class TabCompleter {
 
     return {
       queryTerms: [firstQueryTerm, ...restTokens].filter((term) => term.length > 0),
-      groupFilterTerms: this.normalizeGroupFilter(groupFilter),
+      groupFilterTerms: separatorIndex === 0 ? [] : this.normalizeGroupFilter(groupFilter),
     };
   }
 
@@ -568,15 +570,17 @@ export class TabCompleter {
       .filter((term) => term.length > 0);
   }
 
-  tabMatchesGroupFilter(tab, groupFilterTerms) {
+  tabMatchesGroupFilter(tab, groupFilterTerms, groupInfo) {
     if (!groupFilterTerms) return true;
     if (!chrome.tabGroups?.query) return false;
 
     const noGroupId = chrome.tabGroups.TAB_GROUP_ID_NONE ?? -1;
-    if (tab.groupId == null || tab.groupId === noGroupId) return false;
+    const isUngrouped = tab.groupId == null || tab.groupId === noGroupId;
+    if (groupFilterTerms.length === 0) return isUngrouped;
+    if (isUngrouped) return false;
 
-    const groupLabel = `${tab.groupTitle || ""} ${tab.groupColor || ""}`.trim().toLowerCase();
-    return ranking.matches(groupFilterTerms, groupLabel, null);
+    const groupLabel = `${groupInfo?.title || ""} ${groupInfo?.color || ""}`.trim().toLowerCase();
+    return ranking.matches(groupFilterTerms, groupLabel);
   }
 
   async getGroupInfoById(tabs) {
@@ -589,17 +593,9 @@ export class TabCompleter {
     if (groupIds.size === 0) return {};
 
     const groups = await chrome.tabGroups.query({});
-    const groupInfoById = Object.fromEntries(
+    return Object.fromEntries(
       groups.filter((group) => groupIds.has(group.id)).map((group) => [group.id, group]),
     );
-    for (const tab of tabs) {
-      const groupInfo = groupInfoById[tab.groupId];
-      if (groupInfo) {
-        tab.groupTitle = groupInfo.title;
-        tab.groupColor = groupInfo.color;
-      }
-    }
-    return groupInfoById;
   }
 
   computeRelevancy(suggestion) {
@@ -608,6 +604,75 @@ export class TabCompleter {
     } else {
       return bgUtils.tabRecency.recencyScore(suggestion.tabId);
     }
+  }
+}
+
+export class TabGroupCompleter {
+  refresh() {}
+
+  cancel() {}
+
+  async filter({ queryTerms, query }) {
+    if (!chrome.tabGroups?.query) return [];
+
+    const rawQuery = query?.trim() ?? queryTerms.join(" ").trim();
+    const groups = await chrome.tabGroups.query({});
+    const suggestions = groups
+      .filter((group) => {
+        const fallbackTitle = this.getGroupTitle(group);
+        return queryTerms.length === 0 ||
+          ranking.matches(queryTerms, `${fallbackTitle} ${group.color}`);
+      })
+      .map((group) => {
+        const title = this.getGroupTitle(group);
+        return new Suggestion({
+          queryTerms,
+          description: "tab group",
+          url: `group:${group.id}`,
+          shortUrl: group.color,
+          title,
+          tabGroupId: group.id,
+          tabGroupTitle: group.title,
+          tabGroupColor: group.color,
+          deDuplicate: false,
+          relevancyFunction: this.computeRelevancy,
+        });
+      })
+      .sort((a, b) => b.computeRelevancy() - a.computeRelevancy());
+    if (rawQuery.length > 0) {
+      suggestions.push(this.makeCreateSuggestion(queryTerms, rawQuery));
+    }
+    for (const suggestion of suggestions) {
+      suggestion.generateHtml();
+    }
+    return suggestions;
+  }
+
+  getGroupTitle(group) {
+    if (group.title?.length > 0) return group.title;
+    return group.color[0].toUpperCase() + group.color.slice(1);
+  }
+
+  makeCreateSuggestion(queryTerms, rawQuery) {
+    return new Suggestion({
+      queryTerms,
+      description: "create tab group",
+      url: `create-tab-group:${encodeURIComponent(rawQuery)}`,
+      title: `create new tab group '${rawQuery}'`,
+      createTabGroupTitle: rawQuery,
+      deDuplicate: false,
+      relevancy: -1,
+    });
+  }
+
+  computeRelevancy(suggestion) {
+    return suggestion.queryTerms.length === 0
+      ? 1
+      : ranking.wordRelevancy(
+        suggestion.queryTerms,
+        `${suggestion.title} ${suggestion.tabGroupColor}`,
+        suggestion.title,
+      );
   }
 }
 

@@ -128,6 +128,118 @@ context("vomnibar page", () => {
     assert.equal(Number.MAX_SAFE_INTEGER, filterRequest.maxResults);
   });
 
+  should("assign the selected tab to a group and return to tab search when ctrl-a is pressed", async () => {
+    const filterRequests = [];
+    let assignedTabId = null;
+    let assignedGroupId = null;
+    let assignmentCount = 0;
+    stub(chrome.runtime, "sendMessage", async (message) => {
+      if (message.handler == "filterCompletions") {
+        filterRequests.push(message);
+        if (message.completerName == "tabs") {
+          return [
+            {
+              description: "tab",
+              html: "<span>docs</span>",
+              tabId: 42,
+              title: "docs",
+              url: "https://example.com/docs",
+              tabGroupTitle: assignmentCount > 0 ? "Work" : null,
+              tabGroupColor: assignmentCount > 0 ? "blue" : null,
+            },
+          ];
+        } else if (message.completerName == "tabGroups") {
+          return [
+            {
+              description: "tab group",
+              html: "<span>Work</span>",
+              tabGroupId: 12,
+              tabGroupTitle: "Work",
+              tabGroupColor: "blue",
+              title: "Work",
+              url: "group:12",
+            },
+          ];
+        }
+      } else if (message.handler == "assignTabToGroup") {
+        assignedTabId = message.tabId;
+        assignedGroupId = message.groupId;
+        assignmentCount += 1;
+      }
+    });
+
+    vomnibarPage.reset();
+    await vomnibarPage.activate({ completer: "tabs", query: "docs", selectFirst: true });
+    ui = vomnibarPage.ui;
+
+    await ui.onKeyEvent(newKeyEvent({ key: "a", ctrlKey: true }));
+
+    assert.equal("tabGroups", ui.completerName);
+    assert.equal("", ui.input.value);
+    assert.equal("tabGroups", filterRequests.at(-1).completerName);
+
+    await ui.onKeyEvent(newKeyEvent({ type: "keypress", key: "Enter" }));
+
+    assert.equal(42, assignedTabId);
+    assert.equal(12, assignedGroupId);
+    assert.equal("tabs", ui.completerName);
+    assert.equal("docs", ui.input.value);
+    assert.equal("Work", ui.completions[0].tabGroupTitle);
+  });
+
+  should("create a new tab group from the picker query and return to tab search", async () => {
+    let createdTabId = null;
+    let createdGroupTitle = null;
+    let creationCount = 0;
+    stub(chrome.runtime, "sendMessage", async (message) => {
+      if (message.handler == "filterCompletions") {
+        if (message.completerName == "tabs") {
+          return [
+            {
+              description: "tab",
+              html: "<span>docs</span>",
+              tabId: 42,
+              title: "docs",
+              url: "https://example.com/docs",
+              tabGroupTitle: creationCount > 0 ? "Focus" : null,
+              tabGroupColor: creationCount > 0 ? "blue" : null,
+            },
+          ];
+        } else if (message.completerName == "tabGroups") {
+          return [
+            {
+              description: "create tab group",
+              html: "<span>create new tab group 'Focus'</span>",
+              createTabGroupTitle: "Focus",
+              title: "create new tab group 'Focus'",
+              url: "create-tab-group:Focus",
+            },
+          ];
+        }
+      } else if (message.handler == "createTabGroupForTab") {
+        createdTabId = message.tabId;
+        createdGroupTitle = message.title;
+        creationCount += 1;
+      }
+    });
+
+    vomnibarPage.reset();
+    await vomnibarPage.activate({ completer: "tabs", query: "docs", selectFirst: true });
+    ui = vomnibarPage.ui;
+
+    await ui.onKeyEvent(newKeyEvent({ key: "a", ctrlKey: true }));
+    ui.input.value = "Focus";
+    await ui.update();
+
+    await ui.onKeyEvent(newKeyEvent({ type: "keypress", key: "Enter" }));
+
+    assert.equal(42, createdTabId);
+    assert.equal("Focus", createdGroupTitle);
+    assert.equal("tabs", ui.completerName);
+    assert.equal("docs", ui.input.value);
+    assert.equal("Focus", ui.completions[0].tabGroupTitle);
+  });
+
   should("open a URL-like query when enter is pressed", async () => {
     ui.setQuery("www.example.com");
     let handler = null;

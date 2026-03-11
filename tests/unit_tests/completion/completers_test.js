@@ -13,6 +13,7 @@ import {
   SearchEngineCompleter,
   Suggestion,
   TabCompleter,
+  TabGroupCompleter,
 } from "../../../background_scripts/completion/completers.js";
 import * as ranking from "../../../background_scripts/completion/ranking.js";
 import { RegexpCache } from "../../../background_scripts/completion/ranking.js";
@@ -419,6 +420,34 @@ context("tab completer", () => {
 
     assert.equal(["work-tab.com"], results.map((tab) => tab.url));
   });
+
+  should("filter to ungrouped tabs with :query syntax", async () => {
+    stub(chrome.tabs, "query", () => [
+      { url: "grouped-tab.com", title: "docs", id: 1, groupId: 12 },
+      { url: "ungrouped-tab.com", title: "docs", id: 2, groupId: -1 },
+    ]);
+    stub(chrome.tabGroups, "query", () => [
+      { id: 12, color: "blue", title: "Work" },
+    ]);
+
+    const results = await filterCompleter(completer, [":docs"], { query: ":docs" });
+
+    assert.equal(["ungrouped-tab.com"], results.map((tab) => tab.url));
+  });
+
+  should("filter to all ungrouped tabs with bare : syntax", async () => {
+    stub(chrome.tabs, "query", () => [
+      { url: "grouped-tab.com", title: "docs", id: 1, groupId: 12 },
+      { url: "ungrouped-tab.com", title: "mail", id: 2, groupId: -1 },
+    ]);
+    stub(chrome.tabGroups, "query", () => [
+      { id: 12, color: "blue", title: "Work" },
+    ]);
+
+    const results = await filterCompleter(completer, [":"], { query: ":" });
+
+    assert.equal(["ungrouped-tab.com"], results.map((tab) => tab.url));
+  });
 });
 
 context("tab vomnibar result limits", () => {
@@ -442,6 +471,37 @@ context("tab vomnibar result limits", () => {
   should("honor an overridden maxResults for tab selection", async () => {
     const results = await filterCompleter(completer, ["tab"], { maxResults: 12 });
     assert.equal(12, results.length);
+  });
+});
+
+context("tab group completer", () => {
+  let completer;
+
+  setup(() => {
+    completer = new TabGroupCompleter();
+    stub(chrome.tabGroups, "query", () => [
+      { id: 12, color: "blue", title: "Work" },
+      { id: 13, color: "green", title: "Play" },
+    ]);
+  });
+
+  should("return all tab groups when the query is empty", async () => {
+    const results = await completer.filter({ queryTerms: [] });
+
+    assert.equal([12, 13], results.map((group) => group.tabGroupId));
+  });
+
+  should("filter tab groups by title", async () => {
+    const results = await completer.filter({ queryTerms: ["work"] });
+
+    assert.equal([12], results.map((group) => group.tabGroupId));
+  });
+
+  should("append a create-new-group suggestion when the query is non-empty", async () => {
+    const results = await completer.filter({ queryTerms: ["focus"], query: "focus" });
+
+    assert.equal("create tab group", results.at(-1).description);
+    assert.equal("focus", results.at(-1).createTabGroupTitle);
   });
 });
 

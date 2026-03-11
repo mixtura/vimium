@@ -118,7 +118,9 @@ globalThis.chrome = {
   },
 
   tabs: {
+    group() {},
     get(_id) {},
+    move(_id, _properties) {},
     onUpdated: {
       addListener() {
         return true;
@@ -159,9 +161,11 @@ globalThis.chrome = {
 
   tabGroups: {
     TAB_GROUP_ID_NONE: -1,
+    get() {},
     query() {
       return [];
     },
+    update() {},
   },
 
   webNavigation: {

@@ -502,12 +502,16 @@ export class DomainCompleter {
 // Searches through all open tabs, matching on title and URL.
 // If the query is empty, then return a list of open tabs, sorted by recency.
 export class TabCompleter {
-  async filter({ queryTerms }) {
+  async filter(request) {
+    const { queryTerms, groupFilterTerms } = this.parseQuery(request);
     await bgUtils.tabRecency.init();
     // We search all tabs, not just those in the current window.
     const tabs = await chrome.tabs.query({});
-    const results = tabs.filter((tab) => ranking.matches(queryTerms, tab.url, tab.title));
-    const groupInfoById = await this.getGroupInfoById(results);
+    const groupInfoById = await this.getGroupInfoById(tabs);
+    const results = tabs.filter((tab) => {
+      if (!ranking.matches(queryTerms, tab.url, tab.title)) return false;
+      return this.tabMatchesGroupFilter(tab, groupFilterTerms);
+    });
     const suggestions = results
       .map((tab) => {
         const groupInfo = groupInfoById[tab.groupId];
@@ -537,6 +541,44 @@ export class TabCompleter {
     return suggestions;
   }
 
+  parseQuery({ query, queryTerms }) {
+    const trimmedQuery = query?.trim() ?? "";
+    if (trimmedQuery.length === 0) return { queryTerms, groupFilterTerms: null };
+
+    const [firstToken, ...restTokens] = trimmedQuery.split(/\s+/);
+    const separatorIndex = firstToken.indexOf(":");
+    if (separatorIndex <= 0) return { queryTerms, groupFilterTerms: null };
+
+    const groupFilter = firstToken.slice(0, separatorIndex);
+    const firstQueryTerm = firstToken.slice(separatorIndex + 1);
+
+    // Don't treat URL schemes like "https://" as tab-group filters.
+    if (firstQueryTerm.startsWith("//")) return { queryTerms, groupFilterTerms: null };
+
+    return {
+      queryTerms: [firstQueryTerm, ...restTokens].filter((term) => term.length > 0),
+      groupFilterTerms: this.normalizeGroupFilter(groupFilter),
+    };
+  }
+
+  normalizeGroupFilter(groupFilter) {
+    return groupFilter
+      .toLowerCase()
+      .split(/[\s_-]+/)
+      .filter((term) => term.length > 0);
+  }
+
+  tabMatchesGroupFilter(tab, groupFilterTerms) {
+    if (!groupFilterTerms) return true;
+    if (!chrome.tabGroups?.query) return false;
+
+    const noGroupId = chrome.tabGroups.TAB_GROUP_ID_NONE ?? -1;
+    if (tab.groupId == null || tab.groupId === noGroupId) return false;
+
+    const groupLabel = `${tab.groupTitle || ""} ${tab.groupColor || ""}`.trim().toLowerCase();
+    return ranking.matches(groupFilterTerms, groupLabel, null);
+  }
+
   async getGroupInfoById(tabs) {
     if (!chrome.tabGroups?.query) return {};
 
@@ -547,7 +589,17 @@ export class TabCompleter {
     if (groupIds.size === 0) return {};
 
     const groups = await chrome.tabGroups.query({});
-    return Object.fromEntries(groups.filter((group) => groupIds.has(group.id)).map((group) => [group.id, group]));
+    const groupInfoById = Object.fromEntries(
+      groups.filter((group) => groupIds.has(group.id)).map((group) => [group.id, group]),
+    );
+    for (const tab of tabs) {
+      const groupInfo = groupInfoById[tab.groupId];
+      if (groupInfo) {
+        tab.groupTitle = groupInfo.title;
+        tab.groupColor = groupInfo.color;
+      }
+    }
+    return groupInfoById;
   }
 
   computeRelevancy(suggestion) {

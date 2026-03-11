@@ -388,6 +388,37 @@ context("tab completer", () => {
     assert.equal("Work", results[0].tabGroupTitle);
     assert.equal("blue", results[0].tabGroupColor);
   });
+
+  should("filter tabs by tab-group name with group:query syntax", async () => {
+    stub(chrome.tabs, "query", () => [
+      { url: "work-tab.com", title: "docs", id: 1, groupId: 12 },
+      { url: "play-tab.com", title: "docs", id: 2, groupId: 13 },
+    ]);
+    stub(chrome.tabGroups, "query", () => [
+      { id: 12, color: "blue", title: "Work" },
+      { id: 13, color: "green", title: "Play" },
+    ]);
+
+    const results = await filterCompleter(completer, ["work:docs"], { query: "work:docs" });
+
+    assert.equal(["work-tab.com"], results.map((tab) => tab.url));
+  });
+
+  should("filter tabs by tab-group name when only the group filter is provided", async () => {
+    stub(chrome.tabs, "query", () => [
+      { url: "work-tab.com", title: "docs", id: 1, groupId: 12 },
+      { url: "play-tab.com", title: "chat", id: 2, groupId: 13 },
+      { url: "ungrouped-tab.com", title: "mail", id: 3, groupId: -1 },
+    ]);
+    stub(chrome.tabGroups, "query", () => [
+      { id: 12, color: "blue", title: "Work" },
+      { id: 13, color: "green", title: "Play" },
+    ]);
+
+    const results = await filterCompleter(completer, ["work:"], { query: "work:" });
+
+    assert.equal(["work-tab.com"], results.map((tab) => tab.url));
+  });
 });
 
 context("tab vomnibar result limits", () => {

@@ -799,9 +799,11 @@ Utils.addChromeRuntimeOnMessageListener(
     // corresponds to. Since we expect a valid sender.tab, ignore those messages.
     if (sender.tab == null) return;
     await Settings.onLoaded();
+    // Preserve explicit tabId from request (e.g. assignTabToGroup uses the selected tab, not the
+    // active tab). Only use sender.tab.id when tabId is not provided.
     request = Object.assign({ count: 1 }, request, {
       tab: sender.tab,
-      tabId: sender.tab.id,
+      ...(request.tabId === undefined && { tabId: sender.tab.id }),
     });
     const handler = sendRequestHandlers[request.handler];
     const result = handler ? await handler(request, sender) : null;
